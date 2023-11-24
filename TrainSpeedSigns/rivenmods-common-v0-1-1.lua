@@ -137,5 +137,11 @@ function getTrainSpeed(train)
 end
 
 function setTrainSpeed(train, speed)
+	local signA = math_sign(train.speed);
+	local signB = math_sign(speed);
+	if math.abs(signA - signB) == 2 then
+		-- do not flip velocity, stop instead
+		speed = 0.0
+	end
 	train.speed = speed / GAME_FRAMERATE / 3.6;
 end

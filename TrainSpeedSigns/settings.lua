@@ -10,6 +10,15 @@ data:extend
 	},
 	{
 		type = "double-setting",
+		name = "modtrainspeedsigns-speed-limit",
+		order = "002",
+		setting_type = "runtime-global",
+		default_value = 0,
+		minimum_value = 0.00,
+		maximum_value = 1000.0
+	},
+	{
+		type = "double-setting",
 		name = "modtrainspeedsigns-breaking-factor",
 		order = "101",
 		setting_type = "runtime-global",

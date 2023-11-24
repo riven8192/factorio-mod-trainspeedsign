@@ -1,7 +1,8 @@
-require 'rivenmods-common-v0-1-0'
+require 'rivenmods-common-v0-1-1'
 
 SPEEDCONTROL_THROTTLEFUEL='throttle_fuel'
 SPEEDCONTROL_SETSPEED='set_speed'
+
 
 
 
@@ -12,7 +13,7 @@ function findNearbySpeedSignals(locomotive)
 			{locomotive.position.x-2, locomotive.position.y-2},
 			{locomotive.position.x+2, locomotive.position.y+2}
 		},
-		type="rail-signal"
+		type={"rail-signal","rail-chain-signal"}
 	});
 end
 
@@ -38,7 +39,7 @@ function findSpeedSignalConfig(railSignal)
 		speedControl = red.get_signal({type="virtual", name="signal-R"});
 	end
 	
-	if global.settings.defSpeedControl == SPEEDCONTROL_THROTTLEFUEL or speedControl == 1337 then
+	if speedControl ~= 7331 and (global.settings.defSpeedControl == SPEEDCONTROL_THROTTLEFUEL or speedControl == 1337) then
 		speedControl = SPEEDCONTROL_THROTTLEFUEL
 	else
 		speedControl = SPEEDCONTROL_SETSPEED
@@ -76,18 +77,18 @@ end
 
 
 
-function applyBreaksForTrain(train, currSpeed, maxSpeed)
+function applyBrakesForTrain(train, currSpeed, maxSpeed)
 	local targetSpeed = math_sign(currSpeed) * maxSpeed;
 	local speedDiff = currSpeed - targetSpeed;
-	local breakingFactor = global.settings.breakingFactor;
-	local multiples = math.abs(speedDiff) / breakingFactor;
+	local brakingFactor = global.settings.brakingFactor;
+	local multiples = math.abs(speedDiff) / brakingFactor;
 	local intensity = math.log(10 + math.min(5, multiples));
 	
 	if math.abs(speedDiff) > 5.0 then
-		addNiceSmokePuffsWhenBreaking(train, intensity);
+		addNiceSmokePuffsWhenBraking(train, intensity);
 	end
 	
-	local deceleration = math_sign(currSpeed) * (breakingFactor / GAME_FRAMERATE) * intensity;
+	local deceleration = math_sign(currSpeed) * (brakingFactor / GAME_FRAMERATE) * intensity;
 	local desiredSpeed = currSpeed - deceleration;
 	setTrainSpeed(train, desiredSpeed);
 	return desiredSpeed;
@@ -96,8 +97,8 @@ end
 
 function respectTrainMaxSpeed(train)
 	if not global.trainId2maxspeed[train.id] then
-		if global.trainId2breakingspeed[train.id] then
-			global.trainId2breakingspeed[train.id] = nil;
+		if global.trainId2brakingspeed[train.id] then
+			global.trainId2brakingspeed[train.id] = nil;
 		end
 		return
 	end
@@ -114,24 +115,27 @@ end
 
 
 function respectTrainMaxSpeed__withTrainSetSpeed(train)
-	-- we are breaking, but the game keeps accelerating. if we remember that we were
-	-- breaking in the previous game-tick, we copy the previous speed, if we see that
-	-- we accelerated. this way we get reliable breaking, regardless of what the game
+	-- we are braking, but the game keeps accelerating. if we remember that we were
+	-- braking in the previous game-tick, we copy the previous speed, if we see that
+	-- we accelerated. this way we get reliable braking, regardless of what the game
 	-- or other mods, are going behind the scenes.
 	local currSpeed = getTrainSpeed(train);
-	if global.trainId2breakingspeed[train.id] then
-		if math.abs(currSpeed) > math.abs(global.trainId2breakingspeed[train.id]) then
-			currSpeed = global.trainId2breakingspeed[train.id]
+	if global.trainId2brakingspeed[train.id] then
+		if math.abs(currSpeed) > math.abs(global.trainId2brakingspeed[train.id]) then
+			currSpeed = global.trainId2brakingspeed[train.id]
 		end
 	end
 	
 	local maxSpeed = math.max(2, global.trainId2maxspeed[train.id]);
 	
+	local adjustment = 1; -- this makes it more accurate (as accurate as fuel-toggle)
+	maxSpeed = maxSpeed - adjustment;
+	
 	if math.abs(currSpeed) > maxSpeed then
-		local desiredSpeed = applyBreaksForTrain(train, currSpeed, maxSpeed);
-		global.trainId2breakingspeed[train.id] = desiredSpeed;
+		local desiredSpeed = applyBrakesForTrain(train, currSpeed, maxSpeed);
+		global.trainId2brakingspeed[train.id] = desiredSpeed;
 	else
-		global.trainId2breakingspeed[train.id] = nil;
+		global.trainId2brakingspeed[train.id] = nil;
 	end
 end
 
@@ -154,7 +158,7 @@ function respectTrainMaxSpeed__withFuelToggle(train)
 		for idx, locomotive in ipairs(locomotives) do
 			if trainSpeed > maxSpeed + heuristic then
 				if trainSpeed > maxSpeed + 2.5 then
-					local desiredSpeed = applyBreaksForTrain(train, currSpeed, maxSpeed);
+					local desiredSpeed = applyBrakesForTrain(train, currSpeed, maxSpeed);
 				end
 			
 				if locomotive.burner.remaining_burning_fuel ~= 0.0 then
@@ -223,6 +227,11 @@ end
 
 function monitorTrain(train)
 	local speedValue, speedControl = findSpeedSignalConfigForTrain(train);
+	if speedValue == 0.0 and global.settings.speedLimit ~= 0.0 then
+		speedValue = global.settings.speedLimit
+		speedControl = global.settings.defSpeedControl
+	end
+	
 	if speedValue ~= 0.0 then
 		configureTrainSpeedLimit(train, speedValue, speedControl);
 	end
@@ -262,10 +271,10 @@ end
 
 
 
-function addNiceSmokePuffsWhenBreaking(train, intensity)
+function addNiceSmokePuffsWhenBraking(train, intensity)
 	for direction, locomotives in pairs(train.locomotives) do
 		for idx, locomotive in ipairs(locomotives) do
-			if global.rndm() / (intensity*intensity) < global.settings.breakingSmoke then
+			if global.rndm() / (intensity*intensity) < global.settings.brakingSmoke then
 				locomotive.surface.create_trivial_smoke({name='fire-smoke', position=locomotive.position})
 			end
 		end
@@ -278,7 +287,7 @@ function ensure_mod_context()
 	ensure_global_rndm()
 	ensure_global_mapping('trainId2train')	
 	ensure_global_mapping('trainId2maxspeed')
-	ensure_global_mapping('trainId2breakingspeed')
+	ensure_global_mapping('trainId2brakingspeed')
 	ensure_global_mapping('trainId2speedcontrol')
 	ensure_global_mapping('locomotiveId2fuelbackup')
 end
@@ -291,9 +300,10 @@ function refresh_mod_settings()
 		defSpeedControl = settings.startup["modtrainspeedsigns-speed-control"].value,
 		
 		-- variable
-		breakingFactor  = settings.global["modtrainspeedsigns-breaking-factor"].value,
-		breakingSmoke   = settings.global["modtrainspeedsigns-breaking-smoke"].value,
-		throttleRange   = settings.global["modtrainspeedsigns-throttle-range"].value
+		brakingFactor  = settings.global["modtrainspeedsigns-breaking-factor"].value,
+		brakingSmoke   = settings.global["modtrainspeedsigns-breaking-smoke"].value,
+		throttleRange  = settings.global["modtrainspeedsigns-throttle-range"].value,
+		speedLimit     = settings.global["modtrainspeedsigns-speed-limit"].value,
 	}
 end
 

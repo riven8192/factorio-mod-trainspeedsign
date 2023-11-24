@@ -51,10 +51,8 @@ end
 
 
 function findSpeedSignalConfigForTrain(train)
-	local speedValue = 0;
-	local speedControl = 0;
-	
-	local minDistance = 1000;
+	local usedSpeedValue = 0;
+	local usedSpeedControl = 0;
 	
 	for direction, locomotives in pairs(train.locomotives) do
 		for idx, locomotive in ipairs(locomotives) do
@@ -64,14 +62,17 @@ function findSpeedSignalConfigForTrain(train)
 				local xdiff = locomotive.position.x - railSignal.position.x;
 				local ydiff = locomotive.position.y - railSignal.position.y;
 				local distance = math.sqrt(xdiff*xdiff + ydiff*ydiff);
-				if distance < minDistance then
-					speedValue, speedControl = findSpeedSignalConfig(railSignal);
+
+				local speedValue, speedControl = findSpeedSignalConfig(railSignal);
+				if speedValue ~= 0 and ( usedSpeedValue == 0 or speedValue < usedSpeedValue ) then
+					usedSpeedValue = speedValue;
+					usedSpeedControl = speedControl;
 				end
 			end
 		end
 	end
 	
-	return speedValue, speedControl
+	return usedSpeedValue, usedSpeedControl
 end
 
 
@@ -96,17 +97,28 @@ end
 
 
 function respectTrainMaxSpeed(train)
-	if not global.trainId2maxspeed[train.id] then
-		if global.trainId2brakingspeed[train.id] then
-			global.trainId2brakingspeed[train.id] = nil;
-		end
+	if train.speed == 0 then
 		return
 	end
 	
-	if global.trainId2maxspeed[train.id] and global.trainId2speedcontrol[train.id] then
-		if global.trainId2speedcontrol[train.id] == SPEEDCONTROL_SETSPEED then
+	if global.settings.speedLimit == 0.0 then
+		if not global.trainId2maxspeed[train.id] then
+			if global.trainId2brakingspeed[train.id] then
+				global.trainId2brakingspeed[train.id] = nil;
+			end
+			return
+		end
+	end
+
+	local speedControl = global.trainId2speedcontrol[train.id];
+	if global.settings.speedLimit ~= 0.0 then
+		speedControl = global.settings.defSpeedControl
+	end
+	
+	if global.settings.speedLimit ~= 0.0 or (global.trainId2maxspeed[train.id] and global.trainId2speedcontrol[train.id]) then
+		if speedControl == SPEEDCONTROL_SETSPEED then
 			respectTrainMaxSpeed__withTrainSetSpeed(train)
-		elseif global.trainId2speedcontrol[train.id] == SPEEDCONTROL_THROTTLEFUEL then
+		elseif speedControl == SPEEDCONTROL_THROTTLEFUEL then
 			respectTrainMaxSpeed__withFuelToggle(train)
 		end
 	end
@@ -114,11 +126,30 @@ end
 
 
 
+function calcMaxSpeedForTrain(train)
+	local maxSpeed = nil;
+	
+	if global.trainId2maxspeed[train.id] then
+		maxSpeed = global.trainId2maxspeed[train.id];
+	end
+	
+	if global.settings.speedLimit ~= 0.0 then
+		if not maxSpeed then
+			maxSpeed = global.settings.speedLimit;
+		else
+			maxSpeed = math.min(maxSpeed, global.settings.speedLimit);
+		end
+	end
+	
+	return maxSpeed
+end
+
+
 function respectTrainMaxSpeed__withTrainSetSpeed(train)
-	-- we are braking, but the game keeps accelerating. if we remember that we were
+	-- we are brakeing, but the game keeps accelerating. if we remember that we were
 	-- braking in the previous game-tick, we copy the previous speed, if we see that
 	-- we accelerated. this way we get reliable braking, regardless of what the game
-	-- or other mods, are going behind the scenes.
+	-- or other mods, are doing behind the scenes.
 	local currSpeed = getTrainSpeed(train);
 	if global.trainId2brakingspeed[train.id] then
 		if math.abs(currSpeed) > math.abs(global.trainId2brakingspeed[train.id]) then
@@ -126,10 +157,8 @@ function respectTrainMaxSpeed__withTrainSetSpeed(train)
 		end
 	end
 	
-	local maxSpeed = math.max(2, global.trainId2maxspeed[train.id]);
-	
-	local adjustment = 1; -- this makes it more accurate (as accurate as fuel-toggle)
-	maxSpeed = maxSpeed - adjustment;
+	-- this '-1' makes it more accurate (as accurate as fuel-toggle)
+	local maxSpeed = math.max(2, calcMaxSpeedForTrain(train)) - 1;
 	
 	if math.abs(currSpeed) > maxSpeed then
 		local desiredSpeed = applyBrakesForTrain(train, currSpeed, maxSpeed);
@@ -148,10 +177,8 @@ function respectTrainMaxSpeed__withFuelToggle(train)
 	end
 	
 	local trainSpeed = math.abs(currSpeed);
-	local maxSpeed = math.max(1, global.trainId2maxspeed[train.id]);
-	
-	
-	
+	local maxSpeed = math.max(1, calcMaxSpeedForTrain(train));
+		
 	local heuristic = global.settings.throttleRange;
 	
 	for direction, locomotives in pairs(train.locomotives) do
@@ -227,26 +254,21 @@ end
 
 function monitorTrain(train)
 	local speedValue, speedControl = findSpeedSignalConfigForTrain(train);
-	
-	if speedValue == 0 and global.settings.speedLimit ~= 0.0 and train.speed > global.settings.speedLimit then
-		speedValue = global.settings.speedLimit
-		speedControl = global.settings.defSpeedControl
-	end
-	
 	if speedValue ~= 0 then
 		configureTrainSpeedLimit(train, speedValue, speedControl);
 	end
 end
 
 function configureTrainSpeedLimit(train, speedValue, speedControl)
+	local isSpeedValueReset = (speedValue < 0) or (speedValue >= 1000);
 	local isThrottlingFuel = map_value_equals(global.trainId2speedcontrol, train.id, SPEEDCONTROL_THROTTLEFUEL);
 
 	if speedControl ~= SPEEDCONTROL_THROTTLEFUEL and isThrottlingFuel then
 		mod_log('configureTrainSpeedLimit for train ' .. train.id .. ' [' .. global.rndm() .. ']');
 		restoreTrainFuelConfig(train)
-	end
+	end	
 	
-	if speedValue < 0 or speedValue >= 1000 then
+	if isSpeedValueReset then
 		if global.trainId2speedcontrol[train.id] then
 			mod_log('removing speed-control for train #' .. train.id)
 			global.trainId2speedcontrol[train.id] = nil;

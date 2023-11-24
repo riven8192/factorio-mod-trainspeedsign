@@ -227,12 +227,13 @@ end
 
 function monitorTrain(train)
 	local speedValue, speedControl = findSpeedSignalConfigForTrain(train);
-	if speedValue == 0.0 and global.settings.speedLimit ~= 0.0 then
+	
+	if speedValue == 0 and global.settings.speedLimit ~= 0.0 and train.speed > global.settings.speedLimit then
 		speedValue = global.settings.speedLimit
 		speedControl = global.settings.defSpeedControl
 	end
 	
-	if speedValue ~= 0.0 then
+	if speedValue ~= 0 then
 		configureTrainSpeedLimit(train, speedValue, speedControl);
 	end
 end

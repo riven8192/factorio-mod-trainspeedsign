@@ -40,8 +40,8 @@ data:extend
 		name = "modtrainspeedsigns-throttle-range",
 		order = "103",
 		setting_type = "runtime-global",
-		default_value = 0.125,
+		default_value = 0.5,
 		minimum_value = 0.01,
-		maximum_value = 1.00
+		maximum_value = 2.50
 	}
 }

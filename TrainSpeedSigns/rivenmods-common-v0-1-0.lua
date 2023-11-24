@@ -3,6 +3,23 @@ IS_VERBOSE = false
 
 
 
+function ensure_global_mapping(key)
+	if not global[key] then
+		global[key] = {}
+	end
+end
+
+function ensure_global_rndm()
+	if not global.rndm then
+		global.rndm = game.create_random_generator()
+		global.rndm.re_seed(1337);
+	end
+end
+
+function map_value_equals(map, key, value)
+	return map[key] and map[key] == value
+end
+
 function mod_log(msg)
 	if IS_VERBOSE then
 		game.print('log: ' .. msg);

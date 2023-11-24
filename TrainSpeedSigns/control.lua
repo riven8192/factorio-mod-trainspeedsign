@@ -33,8 +33,19 @@ end
 
 
 
+function findNearbySpeedSignals(locomotive)
+	return locomotive.surface.find_entities_filtered({
+		area={
+			{locomotive.position.x-2, locomotive.position.y-2},
+			{locomotive.position.x+2, locomotive.position.y+2}
+		},
+		type="rail-signal"
+	});
+end
 
-function findSpeedSignalLimit(railSignal)
+
+
+function findSpeedSignalValue(railSignal)
 	local green = railSignal.get_circuit_network(defines.wire_type.green);
 	if green then
 		return green.get_signal({type="virtual", name="signal-V"});
@@ -56,21 +67,14 @@ function findSpeedSignalLimitForTrain(train)
 	
 	for direction, locomotives in pairs(train.locomotives) do
 		for idx, locomotive in ipairs(locomotives) do
-	
-			local railSignals = locomotive.surface.find_entities_filtered({
-				area={
-					{locomotive.position.x-2, locomotive.position.y-2},
-					{locomotive.position.x+2, locomotive.position.y+2}
-				},
-				type="rail-signal"
-			});
+			local railSignals = findNearbySpeedSignals(locomotive);
 			
 			for _idx2_, railSignal in ipairs(railSignals) do
 				local xdiff = locomotive.position.x - railSignal.position.x;
 				local ydiff = locomotive.position.y - railSignal.position.y;
 				local distance = math.sqrt(xdiff*xdiff + ydiff*ydiff);
 				if distance < minDistance then
-					closestSignal = findSpeedSignalLimit(railSignal);
+					closestSignal = findSpeedSignalValue(railSignal);
 				end
 			end
 		end
@@ -119,12 +123,12 @@ script.on_event({defines.events.on_tick},
 			findTrains();
 		end
 		
-		if (e.tick % 5 == 0) then			
-			for trainId, train in pairs(global.modtrainspeedsigns.trainId2train) do
-				if train.valid then
+		for trainId, train in pairs(global.modtrainspeedsigns.trainId2train) do
+			if train.valid then
+				if (e.tick % 5 == trainId % 5) then
 					local closestSignal = findSpeedSignalLimitForTrain(train);
 					
-					if closestSignal < 0 or closestSignal > 300 then
+					if closestSignal < 0 or closestSignal > 1000 then
 						global.modtrainspeedsigns.trainId2maxspeed[trainId] = nil;
 					elseif closestSignal == 0 then
 						-- do nothing
